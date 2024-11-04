@@ -37,13 +37,36 @@
     <br>
     <img style="width: 700px;" src="./images/demo2.jpg">
   </div>
+
+  <button @click="test">
+    test create wallet to get hello
+  </button>
 </template>
 
 <script lang="ts">
 import { defineComponent, ref, watch } from 'vue'
+import Arweave from 'arweave'
+import { connect } from '@permaweb/aoconnect'
 import { fromDecimalToUnit, fromUnitToDecimal, isArweaveAddress, isEthereumAddress } from './utils'
 import { getAOTokenBalance, transferAoToken } from './ao'
 import { utils } from 'ethers'
+
+import * as WarpArBundles from 'warp-arbundles'
+var pkg = (WarpArBundles as any).default ? (WarpArBundles as any).default : WarpArBundles
+var { createData, ArweaveSigner } = pkg
+function createDataItemSigner(wallet: any) {
+  const signer = async ({ data, tags, target, anchor }: any) => {
+    const signer2 = new ArweaveSigner(wallet)
+    const dataItem = createData(data, signer2, { tags, target, anchor })
+    return dataItem.sign(signer2).then(async () => ({
+      id: await dataItem.id,
+      raw: await dataItem.getRaw()
+    }))
+  }
+  return signer
+}
+
+const arweave = Arweave.init({})
 
 export default defineComponent({
   setup() {
@@ -94,12 +117,50 @@ export default defineComponent({
       }
     }
 
+    const defaultAOConfig = {
+      CU_URL: 'https://cu.ao-testnet.xyz',
+      MU_URL: 'https://mu.ao-testnet.xyz',
+      GATEWAY_URL: 'https://g8way.io:443'
+    }
+
+    const ao = connect(defaultAOConfig)
+
+    const getProcessResult = async (message: string, process: string) => {
+      const { Messages, Error, Output, Spawns } = await ao.result({
+        message: message,
+        process: process
+      })
+      return { message: Messages, output: Output, spawns: Spawns, err: Error }
+    }
+
+    const test = async () => {
+      const jwk = await arweave.wallets.generate()
+      console.log('jwk', jwk)
+
+      const signer = createDataItemSigner(jwk)
+      const helloProcess = '-v4cUCUcRiJH67jPMUt-Uhn-K4PHxrkoySM2uqAjAF0'
+
+      const claimHelloMessageId = await ao.message({
+        process: helloProcess,
+        signer,
+        tags: [
+          { name: 'Action', value: 'Claim' },
+        ]
+      })
+      console.log('claimHelloMessageId', claimHelloMessageId)
+
+      const claimHelloResult = await getProcessResult(claimHelloMessageId, helloProcess)
+      console.log('claimHelloResult', claimHelloResult)
+
+    }
+
     watch(account, updateBalance)
 
     const recipient = ref('')
 
     return {
       account,
+      test,
       recipient,
       balance,
       connectWithMetamask,
